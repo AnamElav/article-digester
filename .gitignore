@@ -1,0 +1,25 @@
+# Environment
+venv/
+.env
+
+# User data
+user_context.json
+processed_articles/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+EOF

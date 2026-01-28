@@ -1,10 +1,52 @@
 import json
 import os
+import re
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
 from newspaper import Article
 from datetime import datetime
+from memory import ConceptMemory
+
+memory = ConceptMemory()
+
+def parse_concepts(concepts_text):
+    """
+    Parse the LLM's concept output into structured data
+    
+    Returns list of dicts: [{'name': '...', 'explanation': '...', 'analogy': '...'}]
+    """
+    concepts = []
+    
+    # Split by **Concept: pattern
+    sections = re.split(r'\*\*Concept:\s*', concepts_text)
+    
+    for section in sections[1:]:  # Skip first empty split
+        try:
+            # Extract concept name (up to **)
+            name_match = re.search(r'^(.+?)\*\*', section)
+            if not name_match:
+                continue
+            name = name_match.group(1).strip()
+            
+            # Extract explanation
+            exp_match = re.search(r'Explanation:\s*(.+?)(?=Analogy:|$)', section, re.DOTALL)
+            explanation = exp_match.group(1).strip() if exp_match else ""
+            
+            # Extract analogy
+            anal_match = re.search(r'Analogy:\s*(.+?)(?=$)', section, re.DOTALL)
+            analogy = anal_match.group(1).strip() if anal_match else ""
+            
+            concepts.append({
+                'name': name,
+                'explanation': explanation,
+                'analogy': analogy
+            })
+        except Exception as e:
+            print(f"Warning: Could not parse concept section: {str(e)}")
+            continue
+    
+    return concepts
 
 def get_user_context():
     """Get or load user context for personalized explanations"""
@@ -92,41 +134,146 @@ def break_into_sections(article_text):
     return response.content
 
 def simplify_concepts(text, user_context):
+    """Generate concept explanations, checking memory for prior knowledge"""
     context_str = format_user_context(user_context)
     
+    # First, identify concepts with domains
+    identify_prompt = ChatPromptTemplate.from_messages([
+        ("system", "You are a helpful assistant that identifies complex concepts."),
+        ("user", """Read this text and identify 2-3 complex, abstract, or unfamiliar concepts.
+        
+        For each concept, provide:
+        - Name (2-4 words)
+        - Domain/category (e.g., "Databases", "Machine Learning", "Web Development")
+        
+        Format:
+        - Concept Name | Domain
+        
+        Example:
+        - API Gateway | Software Architecture
+        - Neural Networks | Machine Learning
+        
+        Text:
+        {text}""")
+    ])
+    
+    chain = identify_prompt | llm
+    response = chain.invoke({"text": text})
+    
+    # Parse response
+    concept_entries = []
+    for line in response.content.split('\n'):
+        if '|' in line:
+            parts = line.strip('- ').split('|')
+            if len(parts) == 2:
+                concept_entries.append({
+                    'name': parts[0].strip(),
+                    'domain': parts[1].strip()
+                })
+    
+    # Check memory for each concept (with domain filtering)
+    prior_knowledge = {}
+    for entry in concept_entries:
+        related = memory.check_prior_knowledge(
+            entry['name'], 
+            current_domain=entry['domain']  # <-- PASS DOMAIN
+        )
+        if related:
+            prior_knowledge[entry['name']] = related[0]
+
+    if prior_knowledge:
+        relationship_prompt = ChatPromptTemplate.from_messages([
+            ("system", "You analyze relationships between concepts."),
+            ("user", """Given these previously learned concepts and new concepts, 
+            determine which are actually related and how.
+            
+            Previously learned:
+            {prior_concepts}
+            
+            New concepts from article:
+            {new_concepts}
+            
+            For each new concept, if it's related to a previous concept:
+            - State which previous concept it relates to
+            - Explain the relationship in one sentence (e.g., "builds on", "contrasts with", "is a specific type of")
+            
+            If a new concept is unrelated to previous knowledge, say "No prior connection."
+            
+            Format:
+            New Concept | Related To | Relationship
+            """)
+        ])
+        
+        prior_concepts_str = "\n".join([
+            f"- {info['concept']}: {info['explanation'][:150]}"
+            for info in prior_knowledge.values()
+        ])
+        
+        new_concepts_str = "\n".join([f"- {e['name']}" for e in concept_entries])
+        
+        chain = relationship_prompt | llm
+        relationships = chain.invoke({
+            "prior_concepts": prior_concepts_str,
+            "new_concepts": new_concepts_str
+        })
+        
+        # Parse relationships
+        connection_map = parse_relationships(relationships.content)
+    else:
+        connection_map = {}
+    
+    # Now generate explanations with specific connections
+    explanation_context = ""
+    if connection_map:
+        explanation_context = "\n\nWhen explaining concepts, use these specific connections:\n"
+        for new_concept, (old_concept, relationship) in connection_map.items():
+            explanation_context += f"- {new_concept}: {relationship} {old_concept}\n"
+    
+    # Generate explanations
     prompt = ChatPromptTemplate.from_messages([
-        ("system", f"""You are a helpful assistant that explains complex concepts using concrete, specific analogies tailored to the reader.
+        ("system", f"""You explain concepts using concrete analogies.
 
 Reader profile:
 {context_str}
+{explanation_context}
 
-Your job is to make concepts click for THIS specific person. Use their interests and background to create analogies that resonate with them personally."""),
-        ("user", """Read this text and identify 2-3 complex, abstract, or unfamiliar concepts that would benefit from explanation.
+For concepts with prior connections, START your explanation by explicitly referencing 
+the previous concept. Example: "Remember [old concept]? [New concept] extends that by..."
+"""),
+        ("user", """Explain these concepts:
 
-For each concept:
-1. Quote the specific term or idea
-2. Explain it in plain language first
-3. Create an analogy that:
-   - Connects to the reader's interests or background when relevant
-   - Uses concrete, familiar examples from everyday life
-   - Actually illuminates HOW the concept works, not just what it's similar to
-   - Avoids generic/cliché comparisons
-
-IMPORTANT: A good analogy should make someone think "oh, NOW I get it" - not just "that's an interesting comparison."
+{text}
 
 Format:
-
-**Concept: [exact term from text]**
-Explanation: [clear definition in plain language]
-Analogy: [specific, personalized comparison that actually helps understanding]
-
-Text:
-{text}""")
+**Concept: [name]**
+Explanation: [if related to prior knowledge, start with "Remember how [prior concept]...?" then explain]
+Analogy: [...]
+""")
     ])
     
     chain = prompt | llm
     response = chain.invoke({"text": text})
-    return response.content
+    return response.content, prior_knowledge, concept_entries
+
+def parse_relationships(relationships_text):
+    """
+    Parse LLM's relationship analysis
+    Returns dict: {new_concept: (old_concept, relationship)}
+    """
+    connection_map = {}
+    
+    for line in relationships_text.split('\n'):
+        if '|' in line:
+            parts = [p.strip() for p in line.split('|')]
+            if len(parts) >= 3:
+                new_concept = parts[0]
+                related_to = parts[1]
+                relationship = parts[2]
+                
+                if related_to.lower() != "no prior connection":
+                    connection_map[new_concept] = (related_to, relationship)
+    
+    return connection_map
 
 def generate_questions(article_text):
     prompt = ChatPromptTemplate.from_messages([
@@ -142,26 +289,45 @@ def generate_questions(article_text):
     response = chain.invoke({"article": article_text})
     return response.content
 
-def process_article(article_text, article_title, user_context):
-    """Process article with error handling"""
+def process_article(article_text, article_title, article_url, user_context):
+    """Process article with memory integration"""
     try:
         print("=== BREAKING INTO SECTIONS ===\n")
         sections = break_into_sections(article_text)
         print(sections)
         
         print("\n=== SIMPLIFYING CONCEPTS ===\n")
-        simplified = simplify_concepts(article_text, user_context)
+        simplified, prior_knowledge, concept_entries = simplify_concepts(article_text, user_context)  # <-- ADD concept_entries
         print(simplified)
+        
+        # Show what was remembered
+        if prior_knowledge:
+            print("\n💡 Building on concepts you already know:")
+            for concept, info in prior_knowledge.items():
+                print(f"  - {info['concept']} (from {info['source']})")
         
         print("\n=== RECALL QUESTIONS ===\n")
         questions = generate_questions(article_text)
         print(questions)
         
+        # Parse and store new concepts
+        parsed_concepts = parse_concepts(simplified)
+        
+        # Add domain info from identification phase
+        for i, concept in enumerate(parsed_concepts):
+            if i < len(concept_entries):
+                concept['domain'] = concept_entries[i]['domain']  # <-- ADD THIS
+        
+        if parsed_concepts:
+            memory.store_concepts(parsed_concepts, article_url, article_title)
+            print(f"\n✅ Stored {len(parsed_concepts)} new concepts to memory")
+        
         return sections, simplified, questions
         
     except Exception as e:
-        print(f"\nError processing article: {str(e)}")
-        print("This might be due to API issues or article complexity.")
+        print(f"\n❌ Error processing article: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return None, None, None
 
 def save_to_markdown(url, title, sections, concepts, questions):
@@ -228,7 +394,7 @@ if __name__ == "__main__":
         print(f"Article length: {len(article_text)} characters\n")
         
         # Process the article
-        sections, concepts, questions = process_article(article_text, article_title, user_context)
+        sections, concepts, questions = process_article(article_text, article_title, url, user_context)
         
         if sections and concepts and questions:
             # Save to markdown

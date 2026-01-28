@@ -1,12 +1,15 @@
 import json
 import os
 import re
+import requests
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
 from newspaper import Article
 from datetime import datetime
 from memory import ConceptMemory
+from pypdf import PdfReader
+from io import BytesIO
 
 memory = ConceptMemory()
 
@@ -107,6 +110,47 @@ def extract_article_from_url(url):
     except Exception as e:
         print(f"Error extracting article: {str(e)}")
         print("Please check the URL and try again.")
+        return None, None
+
+def extract_from_pdf(pdf_source):
+    """
+    Extract text from PDF file or URL
+    
+    Args:
+        pdf_source: Either a file path or URL to PDF
+    
+    Returns:
+        (text, title) tuple
+    """
+    try:
+        # Check if it's a URL or file path
+        if pdf_source.startswith('http://') or pdf_source.startswith('https://'):
+            # Download PDF from URL
+            response = requests.get(pdf_source)
+            pdf_file = BytesIO(response.content)
+            reader = PdfReader(pdf_file)
+            title = pdf_source.split('/')[-1].replace('.pdf', '')
+        else:
+            # Local file path
+            reader = PdfReader(pdf_source)
+            title = pdf_source.split('/')[-1].replace('.pdf', '')
+        
+        # Extract text from all pages
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n\n"
+        
+        if not text or len(text) < 100:
+            raise Exception("PDF text is too short or empty")
+        
+        # Try to get title from PDF metadata
+        if reader.metadata and reader.metadata.get('/Title'):
+            title = reader.metadata.get('/Title')
+        
+        return text, title
+        
+    except Exception as e:
+        print(f"❌ Error extracting PDF: {str(e)}")
         return None, None
 
 def break_into_sections(article_text):
@@ -377,36 +421,39 @@ if __name__ == "__main__":
         # Get user context (first time or load existing)
         user_context = get_user_context()
         
-        # Get article URL
-        url = input("\nPaste article URL: ").strip()
+        # Get input (URL or file path)
+        source = input("\nPaste article URL or PDF file path: ").strip()
         
-        if not url:
-            print("No URL provided")
+        if not source:
+            print("❌ No input provided")
             exit(1)
         
-        print(f"\n📥 Extracting article from: {url}\n")
-        article_text, article_title = extract_article_from_url(url)
+        # Determine if it's a PDF or web article
+        is_pdf = source.endswith('.pdf') or '.pdf' in source.lower()
+        
+        if is_pdf:
+            print(f"\n📄 Extracting PDF from: {source}\n")
+            article_text, article_title = extract_from_pdf(source)
+        else:
+            print(f"\n📥 Extracting article from: {source}\n")
+            article_text, article_title = extract_article_from_url(source)
         
         if not article_text:
             exit(1)
         
         print(f"✓ Extracted: {article_title}\n")
-        print(f"Article length: {len(article_text)} characters\n")
+        print(f"📝 Content length: {len(article_text)} characters\n")
         
         # Process the article
-        sections, concepts, questions = process_article(article_text, article_title, url, user_context)
+        sections, concepts, questions = process_article(article_text, article_title, source, user_context)
         
         if sections and concepts and questions:
             # Save to markdown
-            filename = save_to_markdown(url, article_title, sections, concepts, questions)
-            print(f"\nSaved to: {filename}")
+            filename = save_to_markdown(source, article_title, sections, concepts, questions)
+            print(f"\n✅ Saved to: {filename}")
         
     except KeyboardInterrupt:
-        print("\n\nInterrupted by user")
+        print("\n\n👋 Interrupted by user")
     except Exception as e:
-        print(f"\nUnexpected error: {str(e)}")
+        print(f"\n❌ Unexpected error: {str(e)}")
         print("Please check your setup and try again.")
-
-
-
-

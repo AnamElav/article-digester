@@ -37,8 +37,8 @@ Article Digester uses a multi-agent AI system to process articles and generate:
 
 ## Why I Built This
 
-As a CS and Cognitive Sciences student, I love learning but struggle with traditional article formats. I often spend time re-reading the same content without absorbing it. This tool was built to transform how I consume technical content by:
+As a CS and Cognitive Sciences student, I love learning but struggle to stay focused while reading long articles and papers. I often spend time re-reading the same content without absorbing it. This tool was built to transform how I consume content by:
 
-- Adapting to my learning style (concrete examples and analogies)
+- Adapting to my learning style (concrete examples and analogies linked to my interests)
 - Connecting new concepts to my existing knowledge
 - Making dense material more approachable and memorable

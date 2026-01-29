@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 interface ProcessArticleResult {
   article_id: string;
@@ -11,11 +13,32 @@ interface ProcessArticleResult {
 }
 
 export default function Home() {
+  const router = useRouter();
+  const [username, setUsername] = useState("");
   const [source, setSource] = useState("");
   const [sourceType, setSourceType] = useState("url");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ProcessArticleResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check if user is logged in
+    const token = localStorage.getItem("token");
+    const storedUsername = localStorage.getItem("username");
+
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+
+    setUsername(storedUsername || "");
+  }, [router]);
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("username");
+    router.push("/login");
+  };
 
   const processArticle = async () => {
     setLoading(true);
@@ -23,12 +46,15 @@ export default function Home() {
     setResult(null);
 
     try {
+      const token = localStorage.getItem("token");
+
       const response = await fetch(
         "http://localhost:8000/api/process-article",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             source,
@@ -166,15 +192,30 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-gray-100 py-12 px-4">
+    <div className="min-h-screen bg-gray-50 py-12 px-4">
       <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-semibold text-gray-800 mb-2 tracking-tight">
-            Article Digester
-          </h1>
-          <p className="text-gray-600">
-            Transform articles and PDFs into personalized learning materials
-          </p>
+        <div className="flex justify-between items-start mb-8">
+          <div>
+            <h1 className="text-4xl font-semibold text-gray-800 mb-2 tracking-tight">
+              Article Digester
+            </h1>
+            <p className="text-gray-600">Welcome back, {username}!</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="text-gray-600 hover:text-gray-800 text-sm font-medium"
+          >
+            Logout
+          </button>
+        </div>
+
+        <div className="flex justify-center mb-6">
+          <Link
+            href="/concepts"
+            className="text-blue-600 hover:text-blue-700 font-medium"
+          >
+            View Your Knowledge Library →
+          </Link>
         </div>
 
         <div className="bg-white rounded-xl shadow-lg p-8 mb-6">

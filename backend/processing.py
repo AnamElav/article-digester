@@ -421,3 +421,22 @@ def save_to_markdown(url, title, sections, concepts, questions):
     
     return filename
 
+# Add this new function that accepts user_id
+def process_article_with_user(article_text, article_title, article_url, user_context, user_id):
+    """Process article with user-specific memory"""
+    from memory import ConceptMemory
+    
+    # Use user-specific memory
+    user_memory = ConceptMemory(user_id=user_id)
+    
+    # Temporarily replace global memory with user memory
+    global memory
+    old_memory = memory
+    memory = user_memory
+    
+    try:
+        result = process_article(article_text, article_title, article_url, user_context)
+        return result
+    finally:
+        memory = old_memory
+

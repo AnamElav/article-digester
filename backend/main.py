@@ -1,9 +1,10 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import os
 from dotenv import load_dotenv
+from users import create_or_get_user, verify_token
 
 load_dotenv()
 
@@ -18,6 +19,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Dependency to get current user from token
+async def get_current_user(authorization: str = Header(None)):
+    """Get user_id from authorization header"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    token = authorization.replace("Bearer ", "")
+    user_id = verify_token(token)
+    
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    
+    return user_id
+
 # Request/Response models
 class ProcessArticleRequest(BaseModel):
     source: str
@@ -30,26 +45,43 @@ class ProcessArticleResponse(BaseModel):
     concepts: str
     questions: str
 
+class LoginRequest(BaseModel):
+    username: str
+
+# Auth endpoint
+@app.post("/api/login")
+async def login(request: LoginRequest):
+    """Login or create user (no password needed for trusted users)"""
+    user_id, token, is_new = create_or_get_user(request.username)
+    
+    return {
+        "token": token,
+        "user_id": user_id,
+        "username": request.username,
+        "is_new": is_new
+    }
+
 # Health check
 @app.get("/")
 def root():
     return {"status": "ok", "message": "Article Digester API"}
 
-# Process article endpoint
+# Protected: Process article endpoint
 @app.post("/api/process-article", response_model=ProcessArticleResponse)
-async def process_article_endpoint(request: ProcessArticleRequest):
-    """
-    Process an article or PDF and return structured output
-    """
+async def process_article_endpoint(
+    request: ProcessArticleRequest,
+    user_id: str = Depends(get_current_user)  # Require authentication
+):
+    """Process an article or PDF and return structured output"""
     try:
         from processing import (
             extract_article_from_url,
             extract_from_pdf,
-            process_article,
+            process_article_with_user,
             save_to_markdown
         )
         
-        # For now, use default user context (auth can be added later)
+        # Default user context (can be personalized per user later)
         user_context = {
             "background": "CS and CogSci senior at Rice",
             "interests": "dance, weightlifting, K-pop, AI/ML",
@@ -68,12 +100,13 @@ async def process_article_endpoint(request: ProcessArticleRequest):
         if not article_text:
             raise HTTPException(status_code=400, detail="Could not extract article")
         
-        # Process article
-        sections, concepts, questions = process_article(
+        # Process article with user-specific memory
+        sections, concepts, questions = process_article_with_user(
             article_text, 
             article_title, 
             request.source, 
-            user_context
+            user_context,
+            user_id  # Pass user_id for user-scoped memory
         )
         
         # Save to markdown
@@ -92,39 +125,79 @@ async def process_article_endpoint(request: ProcessArticleRequest):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-# Get user's processed articles
-@app.get("/api/articles")
-async def get_articles():
-    """
-    Get list of all processed articles
-    """
-    import glob
-    
-    articles_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "processed_articles")
-    articles = []
-    
-    for filepath in glob.glob(f"{articles_dir}/*.md"):
-        filename = os.path.basename(filepath)
-        articles.append({
-            "id": filename,
-            "filename": filename
-        })
-    
-    return {"articles": articles}
+# Protected: Get concepts
+@app.get("/api/concepts")
+async def get_concepts(user_id: str = Depends(get_current_user)):
+    """Get all learned concepts for current user"""
+    try:
+        from memory import ConceptMemory
+        memory = ConceptMemory(user_id=user_id)  # User-specific memory
+        
+        results = memory.collection.get()
+        
+        if not results['metadatas']:
+            return {"concepts": []}
+        
+        concepts = []
+        for i, metadata in enumerate(results['metadatas']):
+            concepts.append({
+                "id": results['ids'][i],
+                "name": metadata.get('concept_name'),
+                "domain": metadata.get('domain', 'General'),
+                "source": metadata.get('source_title'),
+                "source_url": metadata.get('source_url'),
+                "learned_date": metadata.get('learned_date'),
+                "explanation": results['documents'][i],
+                "analogy": metadata.get('analogy', '')
+            })
+        
+        concepts.sort(key=lambda x: x['learned_date'], reverse=True)
+        return {"concepts": concepts}
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
-# Get specific article
-@app.get("/api/articles/{article_id}")
-async def get_article(article_id: str):
-    """
-    Get a specific processed article
-    """
-    articles_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "processed_articles")
-    filepath = os.path.join(articles_dir, article_id)
-    
-    if not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail="Article not found")
-    
-    with open(filepath, 'r') as f:
-        content = f.read()
-    
-    return {"content": content}
+# Protected: Get stats
+@app.get("/api/stats")
+async def get_stats(user_id: str = Depends(get_current_user)):
+    """Get learning statistics for current user"""
+    try:
+        from memory import ConceptMemory
+        memory = ConceptMemory(user_id=user_id)  # User-specific memory
+        
+        results = memory.collection.get()
+        
+        if not results['metadatas']:
+            return {
+                "total_concepts": 0,
+                "total_articles": 0,
+                "concepts_by_domain": {},
+                "recent_concepts": []
+            }
+        
+        sources = set(m['source_url'] for m in results['metadatas'])
+        
+        domain_counts = {}
+        for metadata in results['metadatas']:
+            domain = metadata.get('domain', 'General')
+            domain_counts[domain] = domain_counts.get(domain, 0) + 1
+        
+        recent = sorted(
+            results['metadatas'],
+            key=lambda x: x.get('learned_date', ''),
+            reverse=True
+        )[:5]
+        
+        recent_concepts = [r.get('concept_name') for r in recent]
+        
+        return {
+            "total_concepts": len(results['metadatas']),
+            "total_articles": len(sources),
+            "concepts_by_domain": domain_counts,
+            "recent_concepts": recent_concepts
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

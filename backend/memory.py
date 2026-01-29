@@ -4,12 +4,20 @@ from datetime import datetime
 import json
 
 class ConceptMemory:
-    def __init__(self, persist_directory="./concept_memory"):
+    def __init__(self, user_id=None, persist_directory="./concept_memory"):
         """Initialize persistent memory for learned concepts"""
         self.client = chromadb.PersistentClient(path=persist_directory)
+        self.user_id = user_id
+        
+        # Create user-specific collection if user_id provided
+        if user_id:
+            collection_name = f"concepts_{user_id.lower().replace(' ', '_')}"
+        else:
+            collection_name = "learned_concepts"  # Default for backward compatibility
+            
         self.collection = self.client.get_or_create_collection(
-            name="learned_concepts",
-            metadata={"description": "Concepts learned from articles"}
+            name=collection_name,
+            metadata={"description": f"Concepts learned by {user_id or 'default user'}"}
         )
     
     def store_concepts(self, concepts_data, article_url, article_title):

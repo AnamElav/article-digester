@@ -4,7 +4,8 @@ venv/
 
 # User data
 user_context.json
-processed_articles/
+concept_memory/
+backend/concept_memory/
 
 # Python
 __pycache__/
@@ -22,4 +23,7 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
-EOF
+
+# Frontend
+node_modules/
+.next/

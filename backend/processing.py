@@ -2,6 +2,7 @@ import json
 import os
 import re
 import requests
+import sys
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from dotenv import load_dotenv
@@ -10,6 +11,9 @@ from datetime import datetime
 from memory import ConceptMemory
 from pypdf import PdfReader
 from io import BytesIO
+
+# Add parent directory to path so we can import memory
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 memory = ConceptMemory()
 
@@ -376,14 +380,15 @@ def process_article(article_text, article_title, article_url, user_context):
 
 def save_to_markdown(url, title, sections, concepts, questions):
     """Save processed article to markdown file"""
-    # Create output directory if it doesn't exist
-    os.makedirs("processed_articles", exist_ok=True)
+    # Save to parent directory's processed_articles
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "processed_articles")
+    os.makedirs(output_dir, exist_ok=True)
     
     # Generate filename from date and title
     date_str = datetime.now().strftime("%Y-%m-%d")
     safe_title = "".join(c for c in title if c.isalnum() or c in (' ', '-', '_')).strip()
     safe_title = safe_title.replace(' ', '-')[:50]  # Limit length
-    filename = f"processed_articles/{date_str}_{safe_title}.md"
+    filename = os.path.join(output_dir, f"{date_str}_{safe_title}.md")
     
     # Create markdown content
     content = f"""# {title}
@@ -416,44 +421,3 @@ def save_to_markdown(url, title, sections, concepts, questions):
     
     return filename
 
-if __name__ == "__main__":
-    try:
-        # Get user context (first time or load existing)
-        user_context = get_user_context()
-        
-        # Get input (URL or file path)
-        source = input("\nPaste article URL or PDF file path: ").strip()
-        
-        if not source:
-            print("❌ No input provided")
-            exit(1)
-        
-        # Determine if it's a PDF or web article
-        is_pdf = source.endswith('.pdf') or '.pdf' in source.lower()
-        
-        if is_pdf:
-            print(f"\n📄 Extracting PDF from: {source}\n")
-            article_text, article_title = extract_from_pdf(source)
-        else:
-            print(f"\n📥 Extracting article from: {source}\n")
-            article_text, article_title = extract_article_from_url(source)
-        
-        if not article_text:
-            exit(1)
-        
-        print(f"✓ Extracted: {article_title}\n")
-        print(f"📝 Content length: {len(article_text)} characters\n")
-        
-        # Process the article
-        sections, concepts, questions = process_article(article_text, article_title, source, user_context)
-        
-        if sections and concepts and questions:
-            # Save to markdown
-            filename = save_to_markdown(source, article_title, sections, concepts, questions)
-            print(f"\n✅ Saved to: {filename}")
-        
-    except KeyboardInterrupt:
-        print("\n\n👋 Interrupted by user")
-    except Exception as e:
-        print(f"\n❌ Unexpected error: {str(e)}")
-        print("Please check your setup and try again.")

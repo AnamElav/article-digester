@@ -6,6 +6,8 @@ venv/
 user_context.json
 concept_memory/
 backend/concept_memory/
+processed_articles/
+backend/users.json
 
 # Python
 __pycache__/
@@ -27,3 +29,4 @@ Thumbs.db
 # Frontend
 node_modules/
 .next/
+frontend/.env.local

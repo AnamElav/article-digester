@@ -49,7 +49,7 @@ export default function Home() {
       const token = localStorage.getItem("token");
 
       const response = await fetch(
-        "http://localhost:8000/api/process-article",
+        `${process.env.NEXT_PUBLIC_API_URL}/api/process-article`,
         {
           method: "POST",
           headers: {

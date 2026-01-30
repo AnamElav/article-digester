@@ -50,10 +50,10 @@ export default function ConceptsPage() {
       const token = localStorage.getItem("token");
 
       const [conceptsRes, statsRes] = await Promise.all([
-        fetch("http://localhost:8000/api/concepts", {
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/concepts`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch("http://localhost:8000/api/stats", {
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/stats`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);

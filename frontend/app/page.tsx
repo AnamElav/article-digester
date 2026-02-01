@@ -201,12 +201,20 @@ export default function Home() {
             </h1>
             <p className="text-gray-600">Welcome back, {username}!</p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="text-gray-600 hover:text-gray-800 text-sm font-medium"
-          >
-            Logout
-          </button>
+          <div className="flex gap-4">
+            <Link
+              href="/settings"
+              className="text-gray-600 hover:text-gray-800 text-sm font-medium"
+            >
+              Settings
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="text-gray-600 hover:text-gray-800 text-sm font-medium"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         <div className="flex justify-center mb-6">

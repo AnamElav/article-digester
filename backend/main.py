@@ -36,6 +36,14 @@ async def get_current_user(authorization: str = Header(None)):
     
     return user_id
 
+class UserProfile(BaseModel):
+    background: str
+    interests: str
+
+class UserProfileResponse(BaseModel):
+    username: str
+    profile: UserProfile | None
+
 # Request/Response models
 class ProcessArticleRequest(BaseModel):
     source: str
@@ -64,6 +72,41 @@ async def login(request: LoginRequest):
         "is_new": is_new
     }
 
+# Endpoint to get user profile
+@app.get("/api/profile", response_model=UserProfileResponse)
+async def get_profile(user_id: str = Depends(get_current_user)):
+    """Get user profile"""
+    from users import load_users
+    
+    users = load_users()
+    user_data = users.get(user_id, {})
+    
+    profile = user_data.get('profile')
+    
+    return {
+        "username": user_data.get('username', user_id),
+        "profile": profile
+    }
+
+# Endpoint to save user profile
+@app.post("/api/profile")
+async def save_profile(
+    profile: UserProfile,
+    user_id: str = Depends(get_current_user)
+):
+    """Save user profile"""
+    from users import load_users, save_users
+    
+    users = load_users()
+    
+    if user_id not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    users[user_id]['profile'] = profile.dict()
+    save_users(users)
+    
+    return {"status": "success", "profile": profile}
+
 # Health check
 @app.get("/")
 def root():
@@ -73,7 +116,7 @@ def root():
 @app.post("/api/process-article", response_model=ProcessArticleResponse)
 async def process_article_endpoint(
     request: ProcessArticleRequest,
-    user_id: str = Depends(get_current_user)  # Require authentication
+    user_id: str = Depends(get_current_user)
 ):
     """Process an article or PDF and return structured output"""
     try:
@@ -83,14 +126,22 @@ async def process_article_endpoint(
             process_article_with_user,
             save_to_markdown
         )
+        from users import load_users
         
-        # Default user context (can be personalized per user later)
-        user_context = {
-            "background": "CS and CogSci senior at Rice",
-            "interests": "dance, weightlifting, K-pop, AI/ML",
-            "learning_style": "concrete examples, analogies to real systems",
-            "technical_level": "advanced"
-        }
+        # Get user's profile
+        users = load_users()
+        user_data = users.get(user_id, {})
+        user_profile = user_data.get('profile')
+        
+        # Use user's profile if available, otherwise use defaults
+        if user_profile:
+            user_context = user_profile
+        else:
+            # Default context
+            user_context = {
+                "background": "General",
+                "interests": "Technology, learning",
+            }
         
         # Extract content
         if request.source_type == "url":

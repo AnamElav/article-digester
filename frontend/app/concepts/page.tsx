@@ -58,13 +58,22 @@ export default function ConceptsPage() {
         }),
       ]);
 
+      // If requests fail, just set empty data (no error thrown)
+      if (!conceptsRes.ok || !statsRes.ok) {
+        setConcepts([]);
+        setStats(null);
+        return;
+      }
+
       const conceptsData = await conceptsRes.json();
       const statsData = await statsRes.json();
 
-      setConcepts(conceptsData.concepts);
+      setConcepts(conceptsData.concepts || []);
       setStats(statsData);
     } catch (error) {
       console.error("Error fetching data:", error);
+      setConcepts([]);
+      setStats(null);
     } finally {
       setLoading(false);
     }

@@ -32,12 +32,28 @@ export default function LoginPage() {
 
       const data = await response.json();
 
-      // Store token in localStorage
+      // Store token and username
       localStorage.setItem("token", data.token);
       localStorage.setItem("username", data.username);
 
-      // Redirect to home
-      router.push("/");
+      // Check if user needs onboarding
+      const profileResponse = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/api/profile`,
+        {
+          headers: {
+            Authorization: `Bearer ${data.token}`,
+          },
+        },
+      );
+
+      const profileData = await profileResponse.json();
+
+      // Redirect to onboarding if no profile, otherwise home
+      if (!profileData.profile) {
+        router.push("/onboarding");
+      } else {
+        router.push("/");
+      }
     } catch (err) {
       setError("Failed to login. Please try again.");
     } finally {

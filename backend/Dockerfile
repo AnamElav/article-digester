@@ -9,8 +9,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# ChromaDB needs a writable path. On Cloud Run the filesystem is read-only except /tmp.
+# Cloud Run filesystem is read-only except /tmp
 ENV CONCEPT_MEMORY_DIR=/tmp/concept_memory
+ENV PROCESSED_ARTICLES_DIR=/tmp/processed_articles
 
 # Expose port
 EXPOSE 8080

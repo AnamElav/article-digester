@@ -379,9 +379,13 @@ def process_article(article_text, article_title, article_url, user_context):
         return None, None, None
 
 def save_to_markdown(url, title, sections, concepts, questions):
-    """Save processed article to markdown file"""
-    # Save to parent directory's processed_articles
-    output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "processed_articles")
+    """Save processed article to markdown file.
+    Uses PROCESSED_ARTICLES_DIR if set (e.g. /tmp/processed_articles on Cloud Run).
+    """
+    output_dir = os.environ.get(
+        "PROCESSED_ARTICLES_DIR",
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "processed_articles"),
+    )
     os.makedirs(output_dir, exist_ok=True)
     
     # Generate filename from date and title

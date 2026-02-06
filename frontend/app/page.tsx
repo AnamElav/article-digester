@@ -64,8 +64,14 @@ export default function Home() {
       );
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to process article");
+        let detail = "Failed to process article";
+        try {
+          const errorData = await response.json();
+          detail = errorData.detail ?? detail;
+        } catch {
+          detail = `${response.status}: ${response.statusText}`;
+        }
+        throw new Error(detail);
       }
 
       const data = await response.json();

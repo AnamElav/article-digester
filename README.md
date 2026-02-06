@@ -30,6 +30,7 @@ Backend:
 - OpenAI GPT-3.5/4 - Content generation
 - ChromaDB - Vector embeddings for semantic search
 - Docker - Containerization
+
 Frontend:
 - Next.js (TypeScript) - React framework
 - Tailwind CSS - Styling

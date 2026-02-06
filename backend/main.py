@@ -157,22 +157,31 @@ async def process_article_endpoint(
         
         # Process article with user-specific memory
         sections, concepts, questions = process_article_with_user(
-            article_text, 
-            article_title, 
-            request.source, 
+            article_text,
+            article_title,
+            request.source,
             user_context,
-            user_id  # Pass user_id for user-scoped memory
+            user_id,
         )
-        
+
+        # Processing failed (e.g. exception in LLM/memory) — don't return None to Pydantic
+        if sections is None or questions is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Article processing failed. Check server logs for errors.",
+            )
+
         # Save to markdown
-        filename = save_to_markdown(request.source, article_title, sections, concepts or "No new concepts", questions)
-        
+        filename = save_to_markdown(
+            request.source, article_title, sections, concepts or "No new concepts", questions
+        )
+
         return ProcessArticleResponse(
             article_id=os.path.basename(filename),
             title=article_title,
             sections=sections,
             concepts=concepts or "No new concepts",
-            questions=questions
+            questions=questions,
         )
         
     except Exception as e:

@@ -168,7 +168,7 @@ async def process_article_endpoint(
         if sections is None or questions is None:
             raise HTTPException(
                 status_code=500,
-                detail="Article processing failed. Check server logs for errors.",
+                detail="Article processing failed (sections/questions were None). Check server logs.",
             )
 
         # Save to markdown
@@ -183,11 +183,13 @@ async def process_article_endpoint(
             concepts=concepts or "No new concepts",
             questions=questions,
         )
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Article processing failed: {str(e)}")
 
 # Protected: Get concepts
 @app.get("/api/concepts")

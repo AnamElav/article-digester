@@ -9,8 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Create directory for ChromaDB persistence
-RUN mkdir -p concept_memory
+# ChromaDB needs a writable path. On Cloud Run the filesystem is read-only except /tmp.
+ENV CONCEPT_MEMORY_DIR=/tmp/concept_memory
 
 # Expose port
 EXPOSE 8080

@@ -1,11 +1,20 @@
+import os
 import chromadb
 from chromadb.config import Settings
 from datetime import datetime
 import json
 
+def _get_persist_dir():
+    """Use CONCEPT_MEMORY_DIR if set (e.g. /tmp on Cloud Run); else ./concept_memory."""
+    return os.environ.get("CONCEPT_MEMORY_DIR", "./concept_memory")
+
 class ConceptMemory:
-    def __init__(self, user_id=None, persist_directory="./concept_memory"):
-        """Initialize persistent memory for learned concepts"""
+    def __init__(self, user_id=None, persist_directory=None):
+        """Initialize persistent memory for learned concepts.
+        On Cloud Run, set CONCEPT_MEMORY_DIR=/tmp/concept_memory (filesystem is read-only except /tmp).
+        """
+        if persist_directory is None:
+            persist_directory = _get_persist_dir()
         self.client = chromadb.PersistentClient(path=persist_directory)
         self.user_id = user_id
         
